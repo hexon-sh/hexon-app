@@ -1,8 +1,3 @@
-//
-//  SettingsView.swift
-//  hexon
-//
-
 import SwiftUI
 import PrivySDK
 
@@ -10,7 +5,9 @@ struct SettingsView: View {
     let addressBook: AddressBook
     @State private var showLogoutAlert = false
     @State private var showExplorerPicker = false
+    @State private var showNetworkPicker = false
     @AppStorage("selectedExplorer") private var selectedExplorer = SolanaExplorer.solanaExplorer.rawValue
+    @AppStorage("selectedNetwork") private var selectedNetwork = SolanaNetwork.mainnet.rawValue
 
     var body: some View {
         NavigationStack {
@@ -23,10 +20,24 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Network") {
+                    Button { showNetworkPicker = true } label: {
+                        HStack {
+                            Label("Network", systemImage: "network")
+                                .foregroundStyle(Color(UIColor.label))
+                            Spacer()
+                            Text(selectedNetwork)
+                                .foregroundStyle(selectedNetwork == SolanaNetwork.devnet.rawValue ? .orange : .secondary)
+                                .font(.subheadline)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("Explorer") {
-                    Button {
-                        showExplorerPicker = true
-                    } label: {
+                    Button { showExplorerPicker = true } label: {
                         HStack {
                             Label("Block Explorer", systemImage: "globe")
                                 .foregroundStyle(Color(UIColor.label))
@@ -56,8 +67,7 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     LabeledContent("Network") {
-                        Text("Mainnet")
-                            .foregroundStyle(.secondary)
+                        Text(selectedNetwork).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -70,58 +80,18 @@ struct SettingsView: View {
             } message: {
                 Text("Are you sure you want to log out?")
             }
+            .sheet(isPresented: $showNetworkPicker) {
+                NetworkPickerSheet(selectedNetwork: $selectedNetwork)
+                    .presentationDetents([.height(220)])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(24)
+            }
             .sheet(isPresented: $showExplorerPicker) {
                 ExplorerPickerSheet(selectedExplorer: $selectedExplorer)
                     .presentationDetents([.height(320)])
                     .presentationDragIndicator(.visible)
                     .presentationCornerRadius(24)
             }
-        }
-    }
-}
-
-// MARK: - Explorer Picker Sheet
-
-struct ExplorerPickerSheet: View {
-    @Binding var selectedExplorer: String
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Text("Block Explorer")
-                .font(.headline)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
-
-            VStack(spacing: 0) {
-                ForEach(Array(SolanaExplorer.allCases.enumerated()), id: \.element.id) { idx, explorer in
-                    if idx > 0 { Divider().padding(.leading, 16) }
-                    Button {
-                        selectedExplorer = explorer.rawValue
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(explorer.rawValue)
-                                .foregroundStyle(Color(UIColor.label))
-                                .font(.body)
-                            Spacer()
-                            if selectedExplorer == explorer.rawValue {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
-                                    .fontWeight(.semibold)
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
-                        .contentShape(Rectangle())
-                    }
-                }
-            }
-            .background(Color(UIColor.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal, 20)
-
-            Spacer()
         }
     }
 }
