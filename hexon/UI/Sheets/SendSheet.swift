@@ -345,10 +345,19 @@ struct SendSheet: View {
             // Privy signs the message bytes and returns the transaction signature
             let signedTxBase64 = try await signWithPrivy(wallet: wallet, builtTx: builtTx)
 
-            // Submit
+            // Submit — returns immediately on broadcast, not on confirmation
             let signature = try await SolanaRPC.sendTransaction(signedTxBase64, network: network)
             await MainActor.run { txSignature = signature }
+
+            // Wait for on-chain confirmation before refreshing balance
+            await SolanaRPC.confirmTransaction(signature, network: network)
             await onSendSuccess?()
+
+            // Second refresh a few seconds later in case the first was still propagating
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                await onSendSuccess?()
+            }
 
         } catch {
             await MainActor.run { errorMessage = error.localizedDescription }

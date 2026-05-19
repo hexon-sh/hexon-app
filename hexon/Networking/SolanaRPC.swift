@@ -122,6 +122,35 @@ enum SolanaRPC {
         ]
         return try await rpc(method: "sendTransaction", params: params, network: network)
     }
+
+    // Polls getSignatureStatuses until the tx reaches "confirmed" or times out (20s).
+    static func confirmTransaction(_ signature: String, network: SolanaNetwork) async {
+        struct TxStatus: Decodable {
+            let confirmationStatus: String?
+        }
+        struct StatusValue: Decodable {
+            let value: [TxStatus?]
+        }
+
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(800))
+            let params: [AnyCodable] = [
+                AnyCodable([signature]),
+                AnyCodable(["searchTransactionHistory": false])
+            ]
+            guard let response = try? await rpc(
+                method: "getSignatureStatuses",
+                params: params,
+                network: network
+            ) as StatusValue else { continue }
+            if let status = response.value.first,
+               let s = status,
+               s.confirmationStatus == "confirmed" || s.confirmationStatus == "finalized" {
+                return
+            }
+        }
+    }
 }
 
 // MARK: - AnyCodable helper
