@@ -20,4 +20,11 @@ enum SolanaNetwork: String, CaseIterable, Identifiable {
         case .devnet:  return "wss://devnet.helius-rpc.com/?api-key=\(heliusApiKey)"
         }
     }
+
+    var rpcURL: URL {
+        switch self {
+        case .mainnet: return URL(string: "https://mainnet.helius-rpc.com/?api-key=\(heliusApiKey)")!
+        case .devnet:  return URL(string: "https://devnet.helius-rpc.com/?api-key=\(heliusApiKey)")!
+        }
+    }
 }

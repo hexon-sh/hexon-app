@@ -28,6 +28,7 @@ struct MainTabView: View {
                 jupiterTokens: jupiterTokens,
                 isLoading: isLoadingWallet || isLoadingData,
                 isDevnet: selectedNetwork.isDevnet,
+                network: selectedNetwork,
                 onRefresh: { await fetchData() }
             )
             .tabItem { Label("Home", systemImage: selectedTab == 0 ? "house.fill" : "house") }
@@ -77,15 +78,35 @@ struct MainTabView: View {
         isLoadingData = true
         walletBalances = nil
         jupiterTokens = [:]
-        async let balances = HeliusAPI.getBalances(address: address, network: network)
-        async let history  = HeliusAPI.getHistory(address: address, network: network)
-        let (b, h) = (try? await balances, (try? await history) ?? [])
-        walletBalances = b
-        var mints = Set(b?.balances.map(\.mint) ?? [])
-        for tx in h { tx.balanceChanges.forEach { mints.insert($0.mint) } }
-        if !mints.isEmpty {
-            jupiterTokens = (try? await JupiterAPI.searchTokens(mints: Array(mints), network: network)) ?? [:]
+
+        if network.isDevnet {
+            let lamports = (try? await SolanaRPC.getBalance(address: address, network: network)) ?? 0
+            let solBalance = Double(lamports) / 1_000_000_000.0
+            walletBalances = WalletBalances(
+                balances: [TokenBalance(
+                    mint: solMint,
+                    symbol: "SOL",
+                    name: "Solana",
+                    balance: solBalance,
+                    decimals: 9,
+                    pricePerToken: nil,
+                    usdValue: nil,
+                    logoUri: nil
+                )],
+                totalUsdValue: nil
+            )
+        } else {
+            async let balances = HeliusAPI.getBalances(address: address, network: network)
+            async let history  = HeliusAPI.getHistory(address: address, network: network)
+            let (b, h) = (try? await balances, (try? await history) ?? [])
+            walletBalances = b
+            var mints = Set(b?.balances.map(\.mint) ?? [])
+            for tx in h { tx.balanceChanges.forEach { mints.insert($0.mint) } }
+            if !mints.isEmpty {
+                jupiterTokens = (try? await JupiterAPI.searchTokens(mints: Array(mints), network: network)) ?? [:]
+            }
         }
+
         isLoadingData = false
     }
 }
@@ -98,13 +119,17 @@ struct HomeTab: View {
     let jupiterTokens: [String: JupiterToken]
     let isLoading: Bool
     let isDevnet: Bool
+    let network: SolanaNetwork
     let onRefresh: () async -> Void
 
     @State private var showQR = false
-    @State private var showSendAlert = false
+    @State private var showSend = false
+    @State private var showScanner = false
+    @State private var scannedAddress = ""
 
     private var allTokens: [TokenBalance] {
-        walletBalances?.balances ?? []
+        let balances = walletBalances?.balances ?? []
+        return isDevnet ? balances.filter { isSolMint($0.mint) } : balances
     }
 
     var body: some View {
@@ -120,33 +145,40 @@ struct HomeTab: View {
                 .padding(.top, 12)
                 .padding(.bottom, 32)
             }
+            .refreshable { await onRefresh() }
             .navigationTitle("Home")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showQR = true } label: {
-                        Image(systemName: "qrcode")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showScanner = true } label: {
+                        Image(systemName: "qrcode.viewfinder")
                     }
                     .disabled(walletAddress == nil)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { Task { await onRefresh() } } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
+            }
+            .sheet(isPresented: $showQR) {
+                if let address = walletAddress {
+                    QRSheet(address: address)
+                        .presentationDetents([.medium])
+                        .presentationDragIndicator(.visible)
                 }
             }
-        }
-        .sheet(isPresented: $showQR) {
-            if let address = walletAddress {
-                QRSheet(address: address)
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
+            .sheet(isPresented: $showScanner) {
+                QRScannerView { address in
+                    scannedAddress = address
+                    showSend = true
+                }
+                .ignoresSafeArea()
             }
-        }
-        .alert("Coming Soon", isPresented: $showSendAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Send functionality will be available soon.")
+            .navigationDestination(isPresented: $showSend) {
+                SendSheet(
+                    walletAddress: walletAddress ?? "",
+                    walletBalances: walletBalances,
+                    jupiterTokens: jupiterTokens,
+                    network: network,
+                    prefillAddress: scannedAddress
+                )
+                .onDisappear { scannedAddress = "" }
+            }
         }
     }
 
@@ -192,7 +224,7 @@ struct HomeTab: View {
 
     private var actionButtons: some View {
         HStack(spacing: 14) {
-            Button { showSendAlert = true } label: {
+            Button { showSend = true } label: {
                 Label("Send", systemImage: "arrow.up")
                     .font(.headline)
                     .frame(maxWidth: .infinity, minHeight: 50)

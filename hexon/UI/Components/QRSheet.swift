@@ -14,6 +14,7 @@ func generateQRCode(from string: String) -> UIImage {
 
 struct QRSheet: View {
     let address: String
+    @State private var copied = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -32,6 +33,21 @@ struct QRSheet: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+            Button {
+                UIPasteboard.general.string = address
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    copied = false
+                }
+            } label: {
+                Label(copied ? "Copied!" : "Copy Address", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .glassEffect(in: .rect(cornerRadius: 12))
+            .padding(.horizontal, 32)
+            .animation(.default, value: copied)
             Spacer()
         }
     }
