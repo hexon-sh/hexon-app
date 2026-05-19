@@ -4,6 +4,7 @@ struct HistoryView: View {
     let walletAddress: String?
     let tokenLookup: [String: TokenBalance]
     let jupiterTokens: [String: JupiterToken]
+    var onActivity: (() async -> Void)? = nil
     @State private var transactions: [WalletTx] = []
     @State private var isLoading = false
     @State private var selectedTx: WalletTx?
@@ -123,8 +124,11 @@ struct HistoryView: View {
     private func connectAndFetch(address: String) async {
         let network = selectedNetwork
         await fetchHistory(address: address, network: network)
-        socket.onNewActivity = {
-            Task { await fetchHistory(address: address, network: network) }
+        socket.onNewActivity = { [self] in
+            Task {
+                await fetchHistory(address: address, network: network)
+                await onActivity?()
+            }
         }
         socket.connect(address: address, network: network)
     }

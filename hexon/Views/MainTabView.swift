@@ -13,6 +13,7 @@ struct MainTabView: View {
     @State private var jupiterTokens: [String: JupiterToken] = [:]
     @State private var isLoadingWallet = false
     @State private var isLoadingData = false
+    @State private var fetchGeneration = 0
     @State private var addressBook = AddressBook()
     @AppStorage("selectedNetwork") private var selectedNetworkRaw = SolanaNetwork.mainnet.rawValue
 
@@ -34,7 +35,12 @@ struct MainTabView: View {
             .tabItem { Label("Home", systemImage: selectedTab == 0 ? "house.fill" : "house") }
             .tag(0)
 
-            HistoryView(walletAddress: walletAddress, tokenLookup: tokenLookup, jupiterTokens: jupiterTokens)
+            HistoryView(
+                walletAddress: walletAddress,
+                tokenLookup: tokenLookup,
+                jupiterTokens: jupiterTokens,
+                onActivity: { await fetchData() }
+            )
                 .tabItem { Label("History", systemImage: selectedTab == 1 ? "clock.fill" : "clock") }
                 .tag(1)
 
@@ -74,6 +80,8 @@ struct MainTabView: View {
 
     private func fetchData() async {
         guard let address = walletAddress else { return }
+        fetchGeneration += 1
+        let gen = fetchGeneration
         let network = selectedNetwork
         isLoadingData = true
         walletBalances = nil
@@ -81,6 +89,7 @@ struct MainTabView: View {
 
         if network.isDevnet {
             let lamports = (try? await SolanaRPC.getBalance(address: address, network: network)) ?? 0
+            guard fetchGeneration == gen else { return }
             let solBalance = Double(lamports) / 1_000_000_000.0
             walletBalances = WalletBalances(
                 balances: [TokenBalance(
@@ -99,14 +108,18 @@ struct MainTabView: View {
             async let balances = HeliusAPI.getBalances(address: address, network: network)
             async let history  = HeliusAPI.getHistory(address: address, network: network)
             let (b, h) = (try? await balances, (try? await history) ?? [])
+            guard fetchGeneration == gen else { return }
             walletBalances = b
             var mints = Set(b?.balances.map(\.mint) ?? [])
             for tx in h { tx.balanceChanges.forEach { mints.insert($0.mint) } }
             if !mints.isEmpty {
-                jupiterTokens = (try? await JupiterAPI.searchTokens(mints: Array(mints), network: network)) ?? [:]
+                let jup = (try? await JupiterAPI.searchTokens(mints: Array(mints), network: network)) ?? [:]
+                guard fetchGeneration == gen else { return }
+                jupiterTokens = jup
             }
         }
 
+        guard fetchGeneration == gen else { return }
         isLoadingData = false
     }
 }
@@ -175,7 +188,8 @@ struct HomeTab: View {
                     walletBalances: walletBalances,
                     jupiterTokens: jupiterTokens,
                     network: network,
-                    prefillAddress: scannedAddress
+                    prefillAddress: scannedAddress,
+                    onSendSuccess: { await onRefresh() }
                 )
                 .onDisappear { scannedAddress = "" }
             }

@@ -21,6 +21,7 @@ struct SendSheet: View {
     let jupiterTokens: [String: JupiterToken]
     let network: SolanaNetwork
     var prefillAddress: String = ""
+    var onSendSuccess: (() async -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -347,6 +348,7 @@ struct SendSheet: View {
             // Submit
             let signature = try await SolanaRPC.sendTransaction(signedTxBase64, network: network)
             await MainActor.run { txSignature = signature }
+            await onSendSuccess?()
 
         } catch {
             await MainActor.run { errorMessage = error.localizedDescription }
