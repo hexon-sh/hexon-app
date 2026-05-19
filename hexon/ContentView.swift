@@ -17,7 +17,7 @@ struct ContentView: View {
         Group {
             switch authState {
             case .authenticated:
-                HomeView()
+                MainTabView()
             case .notReady:
                 ProgressView()
             default:
@@ -274,102 +274,6 @@ struct LoginView: View {
     }
 }
 
-// MARK: - Home
-
-struct HomeView: View {
-    @State private var walletAddress: String?
-    @State private var isLoadingWallet = false
-    @State private var walletError: String?
-    @State private var copied = false
-    @State private var showLogoutAlert = false
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                Spacer()
-
-                walletCard
-                    .padding(.horizontal, 24)
-
-                Spacer()
-
-                Button {
-                    showLogoutAlert = true
-                } label: {
-                    Text("Log out")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, minHeight: 50)
-                }
-                .glassEffect(in: .rect(cornerRadius: 14))
-                .padding(.horizontal, 24)
-                .padding(.bottom, 16)
-            }
-            .navigationTitle("hexon")
-            .alert("Log Out", isPresented: $showLogoutAlert) {
-                Button("Log Out", role: .destructive) {
-                    Task { await privy.getUser()?.logout() }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Are you sure you want to log out?")
-            }
-        }
-        .task { await loadOrCreateWallet() }
-    }
-
-    private var walletCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("Solana Wallet", systemImage: "wallet.bifold")
-                .font(.headline)
-
-            if isLoadingWallet {
-                HStack { Spacer(); ProgressView(); Spacer() }
-                    .padding(.vertical, 8)
-            } else if let address = walletAddress {
-                Text(address)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    UIPasteboard.general.string = address
-                    copied = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        copied = false
-                    }
-                } label: {
-                    Label(copied ? "Copied!" : "Copy Address",
-                          systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(copied ? .green : Color(UIColor.label))
-                        .frame(maxWidth: .infinity, minHeight: 36)
-                }
-                .glassEffect(in: .rect(cornerRadius: 10))
-                .animation(.easeInOut, value: copied)
-            } else if let error = walletError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
-        }
-        .padding(20)
-        .glassEffect(in: .rect(cornerRadius: 20))
-    }
-
-    private func loadOrCreateWallet() async {
-        guard let user = await privy.getUser() else { return }
-        isLoadingWallet = true
-        walletError = nil
-        do {
-            if let existing = user.embeddedSolanaWallets.first {
-                walletAddress = existing.address
-            } else {
-                walletAddress = try await user.createSolanaWallet().address
-            }
-        } catch { walletError = error.localizedDescription }
-        isLoadingWallet = false
-    }
-}
 
 #Preview {
     ContentView()
