@@ -13,8 +13,8 @@ struct ContactEntity: AppEntity {
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
-            title: "\(name)",
-            subtitle: "\(address.prefix(6))…\(address.suffix(4))"
+            title: LocalizedStringResource(stringLiteral: name),
+            subtitle: LocalizedStringResource(stringLiteral: "\(address.prefix(6))…\(address.suffix(4))")
         )
     }
 }
@@ -40,18 +40,26 @@ struct ContactQuery: EntityQuery {
 // MARK: - Intent
 
 struct SendSOLIntent: AppIntent {
-    static var title: LocalizedStringResource = "Transfer SOL"
+    static var title: LocalizedStringResource = "Transfer Token"
     static var description = IntentDescription(
-        "Send SOL from your hexon wallet to a saved contact.",
+        "Send a token from your hexon wallet to a saved contact.",
         categoryName: "Wallet"
     )
     static var openAppWhenRun = false
 
-    @Parameter(title: "To", description: "Saved contact to send SOL to")
+    // Parameters are declared in prompt order: 1 → token, 2 → recipient, 3 → amount
+    @Parameter(title: "Token", description: "Token to send")
+    var token: WalletTokenEntity
+
+    @Parameter(title: "To", description: "Saved contact to send to")
     var recipient: ContactEntity
 
-    @Parameter(title: "Amount (SOL)", description: "Amount of SOL to send", controlStyle: .field)
+    @Parameter(title: "Amount", description: "Amount to send", controlStyle: .field)
     var amount: Double
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Transfer \(\.$amount) \(\.$token) to \(\.$recipient)")
+    }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let walletAddress = UserDefaults.standard.string(forKey: "hexon_wallet_address"),
@@ -62,16 +70,23 @@ struct SendSOLIntent: AppIntent {
         let networkRaw = UserDefaults.standard.string(forKey: "selectedNetwork") ?? SolanaNetwork.mainnet.rawValue
         let network = SolanaNetwork(rawValue: networkRaw) ?? .mainnet
 
-        let sendLamports = UInt64(amount * 1_000_000_000)
-        let balance = (try? await SolanaRPC.getBalance(address: walletAddress, network: network)) ?? 0
-        guard balance >= sendLamports + 5_000 else {
-            let sol = Double(balance) / 1_000_000_000.0
-            return .result(dialog: "Insufficient balance. You have \(String(format: "%.4f", sol)) SOL on \(network.rawValue).")
+        // Balance check
+        guard amount <= token.balance else {
+            return .result(dialog: "Insufficient \(token.symbol) balance. You have \(String(format: "%.4f", token.balance)) \(token.symbol).")
+        }
+        if token.id == "SOL" {
+            let lamports = (try? await SolanaRPC.getBalance(address: walletAddress, network: network)) ?? 0
+            let sendLamports = UInt64(amount * 1_000_000_000)
+            guard lamports >= sendLamports + 5_000 else {
+                let sol = Double(lamports) / 1_000_000_000.0
+                return .result(dialog: "Insufficient balance. You have \(String(format: "%.4f", sol)) SOL (need a little extra for fees).")
+            }
         }
 
+        let amountStr = String(format: "%.4f", amount)
         try await requestConfirmation(
             actionName: .send,
-            dialog: IntentDialog("Send \(String(format: "%.4f", amount)) SOL to \(recipient.name) on \(network.rawValue)?")
+            dialog: IntentDialog("Send \(amountStr) \(token.symbol) to \(recipient.name) on \(network.rawValue)?")
         )
 
         guard let user = await privy.getUser(),
@@ -81,17 +96,46 @@ struct SendSOLIntent: AppIntent {
 
         do {
             let blockhash = try await SolanaRPC.getLatestBlockhash(network: network)
-            let builtTx = try await MainActor.run {
-                try buildSOLTransfer(
-                    from: walletAddress,
-                    to: recipient.address,
-                    lamports: sendLamports,
-                    recentBlockhash: blockhash
-                )
+            let builtTx: BuiltTransaction
+
+            if token.id == "SOL" {
+                let lamports = UInt64(amount * 1_000_000_000)
+                builtTx = try await MainActor.run {
+                    try buildSOLTransfer(
+                        from: walletAddress,
+                        to: recipient.address,
+                        lamports: lamports,
+                        recentBlockhash: blockhash
+                    )
+                }
+            } else {
+                guard let srcATA = token.ataAddress else {
+                    return .result(dialog: "No \(token.symbol) token account found in your wallet.")
+                }
+                guard let dstAccounts = try? await SolanaRPC.getTokenAccounts(owner: recipient.address, network: network) else {
+                    return .result(dialog: "\(recipient.name) doesn't have a \(token.symbol) token account. They need to receive \(token.symbol) first.")
+                }
+                guard let dstPubkey = await MainActor.run(body: {
+                    dstAccounts.first(where: { $0.mint == token.id })?.pubkey
+                }) else {
+                    return .result(dialog: "\(recipient.name) doesn't have a \(token.symbol) token account. They need to receive \(token.symbol) first.")
+                }
+                let rawAmount = UInt64(amount * pow(10.0, Double(token.decimals)))
+                builtTx = try await MainActor.run {
+                    try buildSPLTransfer(
+                        from: walletAddress,
+                        sourceATA: srcATA,
+                        destinationATA: dstPubkey,
+                        tokenMint: token.id,
+                        amount: rawAmount,
+                        recentBlockhash: blockhash
+                    )
+                }
             }
+
             let signedTx = try await signWithPrivy(wallet: wallet, builtTx: builtTx)
             let sig = try await SolanaRPC.sendTransaction(signedTx, network: network)
-            return .result(dialog: "Sent \(String(format: "%.4f", amount)) SOL to \(recipient.name). Signature: \(sig.prefix(8))…")
+            return .result(dialog: "Sent \(amountStr) \(token.symbol) to \(recipient.name). Signature: \(sig.prefix(8))…")
         } catch {
             return .result(dialog: "Transfer failed. Open hexon and try sending from there.")
         }
@@ -108,7 +152,7 @@ enum IntentError: Swift.Error, LocalizedError, CustomLocalizedStringResourceConv
     var errorDescription: String? {
         switch self {
         case .notSignedIn:         return "Open hexon and sign in before using Siri."
-        case .insufficientBalance: return "Insufficient SOL balance."
+        case .insufficientBalance: return "Insufficient balance."
         case .message(let m):      return m
         }
     }
@@ -116,7 +160,7 @@ enum IntentError: Swift.Error, LocalizedError, CustomLocalizedStringResourceConv
     var localizedStringResource: LocalizedStringResource {
         switch self {
         case .notSignedIn:         return "Open hexon and sign in before using Siri."
-        case .insufficientBalance: return "Insufficient SOL balance."
+        case .insufficientBalance: return "Insufficient balance."
         case .message(let m):      return "\(m)"
         }
     }

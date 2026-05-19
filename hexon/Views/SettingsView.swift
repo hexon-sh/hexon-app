@@ -1,5 +1,6 @@
 import SwiftUI
 import PrivySDK
+import AppIntents
 
 struct SettingsView: View {
     let addressBook: AddressBook
@@ -49,6 +50,21 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                }
+
+                Section("Siri & Shortcuts") {
+                    HStack {
+                        Label("Transfer Token", systemImage: "arrow.up.circle")
+                        Spacer()
+                        ShortcutsLink()
+                            .shortcutsLinkStyle(.automaticOutline)
+                    }
+                    HStack {
+                        Label("Check Balance", systemImage: "dollarsign.circle")
+                        Spacer()
+                        ShortcutsLink()
+                            .shortcutsLinkStyle(.automaticOutline)
                     }
                 }
 

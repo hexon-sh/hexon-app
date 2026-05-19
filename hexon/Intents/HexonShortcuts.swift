@@ -5,11 +5,11 @@ struct HexonShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: SendSOLIntent(),
             phrases: [
-                "Transfer SOL with \(.applicationName)",
+                "Transfer token with \(.applicationName)",
                 "Transfer crypto with \(.applicationName)",
-                "Send SOL using \(.applicationName)"
+                "Send token using \(.applicationName)"
             ],
-            shortTitle: "Transfer SOL",
+            shortTitle: "Transfer Token",
             systemImageName: "arrow.up.circle.fill"
         )
         AppShortcut(
