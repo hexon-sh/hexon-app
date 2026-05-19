@@ -1,8 +1,3 @@
-//
-//  AddressBookView.swift
-//  hexon
-//
-
 import SwiftUI
 
 struct Contact: Codable, Identifiable {
@@ -34,12 +29,18 @@ class AddressBook {
 
     func add(_ contact: Contact) { contacts.append(contact) }
 
+    func update(_ contact: Contact) {
+        guard let idx = contacts.firstIndex(where: { $0.id == contact.id }) else { return }
+        contacts[idx] = contact
+    }
+
     func delete(at offsets: IndexSet) { contacts.remove(atOffsets: offsets) }
 }
 
 struct AddressBookView: View {
     @State var book: AddressBook
     @State private var showAddSheet = false
+    @State private var editingContact: Contact?
 
     var body: some View {
         NavigationStack {
@@ -49,7 +50,7 @@ struct AddressBookView: View {
                 } else {
                     List {
                         ForEach(book.contacts) { contact in
-                            ContactRow(contact: contact)
+                            ContactRow(contact: contact, onEdit: { editingContact = contact })
                         }
                         .onDelete { book.delete(at: $0) }
                     }
@@ -58,15 +59,16 @@ struct AddressBookView: View {
             .navigationTitle("Address Book")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showAddSheet = true
-                    } label: {
+                    Button { showAddSheet = true } label: {
                         Image(systemName: "plus")
                     }
                 }
             }
             .sheet(isPresented: $showAddSheet) {
-                AddContactSheet(book: book)
+                ContactFormSheet(book: book, existing: nil)
+            }
+            .sheet(item: $editingContact) { contact in
+                ContactFormSheet(book: book, existing: contact)
             }
         }
     }
@@ -87,6 +89,7 @@ struct AddressBookView: View {
 
 struct ContactRow: View {
     let contact: Contact
+    let onEdit: () -> Void
     @State private var copied = false
 
     var body: some View {
@@ -98,6 +101,12 @@ struct ContactRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button { onEdit() } label: {
+                Label("Edit", systemImage: "pencil")
+            }
+            .tint(.orange)
+        }
         .swipeActions(edge: .trailing) {
             Button {
                 UIPasteboard.general.string = contact.address
@@ -115,11 +124,14 @@ struct ContactRow: View {
     }
 }
 
-struct AddContactSheet: View {
+struct ContactFormSheet: View {
     let book: AddressBook
+    let existing: Contact?
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var address = ""
+
+    private var isEditing: Bool { existing != nil }
 
     var body: some View {
         NavigationStack {
@@ -134,7 +146,7 @@ struct AddContactSheet: View {
                         .font(.system(.body, design: .monospaced))
                 }
             }
-            .navigationTitle("Add Contact")
+            .navigationTitle(isEditing ? "Edit Contact" : "Add Contact")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -142,12 +154,22 @@ struct AddContactSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Save") {
-                        book.add(Contact(name: name, address: address))
+                        if isEditing, var updated = existing {
+                            updated.name = name
+                            updated.address = address
+                            book.update(updated)
+                        } else {
+                            book.add(Contact(name: name, address: address))
+                        }
                         dismiss()
                     }
                     .fontWeight(.semibold)
                     .disabled(name.isEmpty || address.isEmpty)
                 }
+            }
+            .onAppear {
+                name = existing?.name ?? ""
+                address = existing?.address ?? ""
             }
         }
     }

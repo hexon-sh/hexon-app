@@ -10,6 +10,24 @@ struct SettingsView: View {
     @AppStorage("selectedExplorer") private var selectedExplorer = SolanaExplorer.solanaExplorer.rawValue
     @AppStorage("selectedNetwork") private var selectedNetwork = SolanaNetwork.mainnet.rawValue
 
+    @ViewBuilder
+    private func shortcutRow(icon: String, color: Color, title: String, phrase: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(color)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body)
+                Text(phrase)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -53,19 +71,27 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Siri & Shortcuts") {
-                    HStack {
-                        Label("Transfer Token", systemImage: "arrow.up.circle")
-                        Spacer()
-                        ShortcutsLink()
-                            .shortcutsLinkStyle(.automaticOutline)
-                    }
-                    HStack {
-                        Label("Check Balance", systemImage: "dollarsign.circle")
-                        Spacer()
-                        ShortcutsLink()
-                            .shortcutsLinkStyle(.automaticOutline)
-                    }
+                Section {
+                    shortcutRow(
+                        icon: "arrow.up.circle.fill",
+                        color: .blue,
+                        title: "Transfer Token",
+                        phrase: "\"Transfer token with hexon\""
+                    )
+                    shortcutRow(
+                        icon: "dollarsign.circle.fill",
+                        color: .green,
+                        title: "Check Balance",
+                        phrase: "\"Check my hexon balance\""
+                    )
+                    ShortcutsLink()
+                        .shortcutsLinkStyle(.automaticOutline)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 4)
+                } header: {
+                    Text("Siri & Shortcuts")
+                } footer: {
+                    Text("Say these phrases to Siri, or open Shortcuts to customise and add to your Home Screen.")
                 }
 
                 Section("Account") {
