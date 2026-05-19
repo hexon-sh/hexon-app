@@ -7,6 +7,7 @@
 
 import SwiftUI
 import PrivySDK
+import AppIntents
 
 let privy: Privy = PrivySdk.initialize(config: PrivyConfig(
     appId: "cmpbajp75008d0cl1g0de2e3h",
@@ -15,6 +16,10 @@ let privy: Privy = PrivySdk.initialize(config: PrivyConfig(
 
 @main
 struct hexonApp: App {
+    init() {
+        HexonShortcuts.updateAppShortcutParameters()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

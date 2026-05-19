@@ -58,6 +58,7 @@ struct MainTabView: View {
     private func loadWalletThenData() async {
         if useTestWallet {
             walletAddress = testWalletAddress
+            UserDefaults.standard.set(testWalletAddress, forKey: "hexon_wallet_address")
             await fetchData()
             return
         }
@@ -68,6 +69,9 @@ struct MainTabView: View {
                 walletAddress = existing.address
             } else {
                 walletAddress = try await user.createSolanaWallet().address
+            }
+            if let addr = walletAddress {
+                UserDefaults.standard.set(addr, forKey: "hexon_wallet_address")
             }
         } catch {}
         isLoadingWallet = false

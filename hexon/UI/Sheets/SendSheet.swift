@@ -367,21 +367,3 @@ struct SendSheet: View {
     }
 }
 
-// MARK: - Privy signing bridge
-
-private func signWithPrivy(wallet: EmbeddedSolanaWallet, builtTx: BuiltTransaction) async throws -> String {
-    // Privy embedded wallet signing:
-    // Pass the message bytes (starting with 0x80 version prefix) to Privy for signing.
-    // Privy returns a 64-byte ed25519 signature over these bytes.
-    let messageBase64 = builtTx.messageBytes.base64EncodedString()
-    let signatureBase64 = try await wallet.provider.signMessage(message: messageBase64)
-    guard let signatureData = Data(base64Encoded: signatureBase64),
-          signatureData.count == 64 else {
-        throw TxError.signingFailed
-    }
-    guard let signedTx = attachSignature(
-        unsignedBase64: builtTx.unsignedBase64,
-        signature: signatureData
-    ) else { throw TxError.signingFailed }
-    return signedTx
-}
