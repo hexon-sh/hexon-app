@@ -64,6 +64,14 @@ struct SendSOLIntent: AppIntent {
         Summary("Transfer \(\.$amount) \(\.$token) to \(\.$recipient)")
     }
 
+    private static func formatAmount(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 9
+        formatter.usesGroupingSeparator = false
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+
     func perform() async throws -> some IntentResult & ProvidesDialog {
         guard let walletAddress = UserDefaults.standard.string(forKey: "hexon_wallet_address"),
               !walletAddress.isEmpty else {
@@ -75,18 +83,18 @@ struct SendSOLIntent: AppIntent {
 
         // Balance check
         guard amount <= token.balance else {
-            return .result(dialog: "Insufficient \(token.symbol) balance. You have \(String(format: "%.4f", token.balance)) \(token.symbol).")
+            return .result(dialog: "Insufficient \(token.symbol) balance. You have \(Self.formatAmount(token.balance)) \(token.symbol).")
         }
         if token.id == "SOL" {
             let lamports = (try? await SolanaRPC.getBalance(address: walletAddress, network: network)) ?? 0
             let sendLamports = UInt64(amount * 1_000_000_000)
             guard lamports >= sendLamports + 5_000 else {
                 let sol = Double(lamports) / 1_000_000_000.0
-                return .result(dialog: "Insufficient balance. You have \(String(format: "%.4f", sol)) SOL (need a little extra for fees).")
+                return .result(dialog: "Insufficient balance. You have \(Self.formatAmount(sol)) SOL (need a little extra for fees).")
             }
         }
 
-        let amountStr = String(format: "%.4f", amount)
+        let amountStr = Self.formatAmount(amount)
         try await requestConfirmation(
             actionName: .send,
             dialog: IntentDialog("Send \(amountStr) \(token.symbol) to \(recipient.name) on \(network.rawValue)?")
@@ -143,6 +151,7 @@ struct SendSOLIntent: AppIntent {
             return .result(dialog: "Transfer failed. Open hexon and try sending from there.")
         }
     }
+
 }
 
 // MARK: - Intent Error

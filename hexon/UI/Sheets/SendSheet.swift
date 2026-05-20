@@ -37,6 +37,7 @@ struct SendSheet: View {
     @State private var showScanner = false
     @State private var showTokenPicker = false
     @State private var showContactPicker = false
+    @State private var showApproval = false
 
     private var amount: Double { Double(amountText) ?? 0 }
     private var isValid: Bool {
@@ -71,6 +72,12 @@ struct SendSheet: View {
             contactPickerSheet
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showApproval) {
+            approvalSheet
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .interactiveDismissDisabled(isSending)
         }
         .task {
             recipient = prefillAddress
@@ -181,16 +188,13 @@ struct SendSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Send button
+            // Send button → opens approval sheet
             Button {
-                Task { await send() }
+                showApproval = true
             } label: {
-                HStack {
-                    if isSending { ProgressView().tint(Color(UIColor.label)) }
-                    Text(isSending ? "Sending…" : "Send")
-                        .font(.headline)
-                }
-                .frame(maxWidth: .infinity, minHeight: 50)
+                Text("Review & Send")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
             }
             .glassEffect(in: .rect(cornerRadius: 14))
             .disabled(!isValid)
@@ -232,6 +236,92 @@ struct SendSheet: View {
                 .glassEffect(in: .rect(cornerRadius: 12))
         }
         .padding(.top, 40)
+    }
+
+    // MARK: Approval Sheet
+
+    private var approvalSheet: some View {
+        VStack(spacing: 0) {
+            // Header
+            VStack(spacing: 6) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.blue)
+                    .padding(.top, 24)
+                Text("Approve Transaction")
+                    .font(.title3.bold())
+                Text("Review the details before approving")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 20)
+
+            // Transaction details
+            VStack(spacing: 0) {
+                approvalRow(label: "Amount", value: "\(amountText) \(selectedToken?.symbol ?? "")")
+                Divider().padding(.horizontal, 16)
+                approvalRow(label: "To", value: recipient.count > 16
+                    ? "\(recipient.prefix(8))…\(recipient.suffix(8))"
+                    : recipient)
+                Divider().padding(.horizontal, 16)
+                approvalRow(label: "Network", value: network.rawValue.capitalized)
+                Divider().padding(.horizontal, 16)
+                approvalRow(label: "Fee", value: "~0.000005 SOL")
+            }
+            .glassEffect(in: .rect(cornerRadius: 16))
+            .padding(.horizontal, 20)
+
+            if let err = errorMessage {
+                Text(err)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+            }
+
+            // Action buttons
+            VStack(spacing: 10) {
+                Button {
+                    Task { await send() }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSending { ProgressView().tint(Color(UIColor.label)) }
+                        Text(isSending ? "Sending…" : "Approve & Send")
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .glassEffect(in: .rect(cornerRadius: 14))
+                .disabled(isSending)
+
+                Button("Reject") {
+                    showApproval = false
+                }
+                .font(.subheadline)
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(isSending)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private func approvalRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 
     // MARK: Token Picker Sheet
@@ -388,7 +478,10 @@ struct SendSheet: View {
 
             // Submit — returns immediately on broadcast, not on confirmation
             let signature = try await SolanaRPC.sendTransaction(signedTxBase64, network: network)
-            await MainActor.run { txSignature = signature }
+            await MainActor.run {
+                showApproval = false
+                txSignature = signature
+            }
             Task { await HexonAPI.recordBroadcast(requestId: UUID().uuidString, signature: signature) }
 
             // Wait for on-chain confirmation before refreshing balance

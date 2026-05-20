@@ -4,5 +4,6 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera is used to scan Solana address QR codes.</string>
+
 </dict>
 </plist>

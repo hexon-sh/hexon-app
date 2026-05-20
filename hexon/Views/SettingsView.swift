@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var showNetworkPicker = false
     @AppStorage("selectedExplorer") private var selectedExplorer = SolanaExplorer.solanaExplorer.rawValue
     @AppStorage("selectedNetwork") private var selectedNetwork = SolanaNetwork.mainnet.rawValue
-
     @ViewBuilder
     private func shortcutRow(icon: String, color: Color, title: String, phrase: String) -> some View {
         HStack(spacing: 14) {
