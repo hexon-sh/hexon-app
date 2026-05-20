@@ -20,6 +20,7 @@ struct SendSheet: View {
     let walletBalances: WalletBalances?
     let jupiterTokens: [String: JupiterToken]
     let network: SolanaNetwork
+    let addressBook: AddressBook
     var prefillAddress: String = ""
     var onSendSuccess: (() async -> Void)? = nil
 
@@ -35,6 +36,7 @@ struct SendSheet: View {
     @State private var errorMessage: String?
     @State private var showScanner = false
     @State private var showTokenPicker = false
+    @State private var showContactPicker = false
 
     private var amount: Double { Double(amountText) ?? 0 }
     private var isValid: Bool {
@@ -65,6 +67,11 @@ struct SendSheet: View {
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showContactPicker) {
+            contactPickerSheet
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         .task {
             recipient = prefillAddress
             await loadTokens()
@@ -83,6 +90,22 @@ struct SendSheet: View {
                         .font(.system(.body, design: .monospaced))
                         .autocorrectionDisabled()
                         .autocapitalization(.none)
+                    if UIPasteboard.general.hasStrings {
+                        Button {
+                            recipient = UIPasteboard.general.string ?? ""
+                        } label: {
+                            Image(systemName: "doc.on.clipboard")
+                                .foregroundStyle(Color(UIColor.label))
+                        }
+                    }
+                    if !addressBook.contacts.isEmpty {
+                        Button {
+                            showContactPicker = true
+                        } label: {
+                            Image(systemName: "person.crop.circle")
+                                .foregroundStyle(Color(UIColor.label))
+                        }
+                    }
                     Button {
                         showScanner = true
                     } label: {
@@ -214,15 +237,9 @@ struct SendSheet: View {
     // MARK: Token Picker Sheet
 
     private var tokenPickerSheet: some View {
-        VStack(spacing: 0) {
-            Text("Select Token")
-                .font(.headline)
-                .padding(.top, 20)
-                .padding(.bottom, 16)
-
-            VStack(spacing: 0) {
-                ForEach(Array(tokens.enumerated()), id: \.element.id) { idx, tok in
-                    if idx > 0 { Divider().padding(.leading, 56) }
+        NavigationStack {
+            List {
+                ForEach(tokens) { tok in
                     Button {
                         selectedToken = tok
                         showTokenPicker = false
@@ -241,17 +258,41 @@ struct SendSheet: View {
                                 Image(systemName: "checkmark").foregroundStyle(.blue).fontWeight(.semibold)
                             }
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
                         .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .background(Color(UIColor.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .padding(.horizontal, 20)
+            .listStyle(.plain)
+            .navigationTitle("Select Token")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
 
-            Spacer()
+    // MARK: Contact Picker Sheet
+
+    private var contactPickerSheet: some View {
+        NavigationStack {
+            List(addressBook.contacts) { contact in
+                Button {
+                    recipient = contact.address
+                    showContactPicker = false
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(contact.name)
+                            .font(.headline)
+                            .foregroundStyle(Color(UIColor.label))
+                        Text("\(contact.address.prefix(8))…\(contact.address.suffix(8))")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .listStyle(.plain)
+            .navigationTitle("Choose Contact")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -274,22 +315,22 @@ struct SendSheet: View {
             ))
         }
 
-        // SPL tokens on mainnet only — fetch ATAs from RPC
-        if !network.isDevnet {
-            if let accounts = try? await SolanaRPC.getTokenAccounts(owner: walletAddress, network: network) {
-                for account in accounts where account.uiAmount > 0 {
-                    let jup = jupiterTokens[account.mint]
-                    let bal = walletBalances?.balances.first { $0.mint == account.mint }
-                    result.append(SendableToken(
-                        id: account.mint,
-                        symbol: jup?.symbol ?? bal?.symbol ?? String(account.mint.prefix(6)),
-                        name: jup?.name ?? bal?.name ?? account.mint,
-                        decimals: account.decimals,
-                        balance: account.uiAmount,
-                        logoURL: jup?.logoURL ?? bal?.logoUri.flatMap { URL(string: $0) },
-                        ataAddress: account.pubkey
-                    ))
-                }
+        // SPL tokens — on devnet only include the devnet USDC mint; on mainnet include all
+        if let accounts = try? await SolanaRPC.getTokenAccounts(owner: walletAddress, network: network) {
+            for account in accounts where account.uiAmount > 0 {
+                if network.isDevnet && account.mint != network.usdcMint { continue }
+                let jup = jupiterTokens[account.mint]
+                let bal = walletBalances?.balances.first { $0.mint == account.mint }
+                let isDevnetUsdc = network.isDevnet && account.mint == network.usdcMint
+                result.append(SendableToken(
+                    id: account.mint,
+                    symbol: isDevnetUsdc ? "USDC" : (jup?.symbol ?? bal?.symbol ?? String(account.mint.prefix(6))),
+                    name: isDevnetUsdc ? "USD Coin (Devnet)" : (jup?.name ?? bal?.name ?? account.mint),
+                    decimals: account.decimals,
+                    balance: account.uiAmount,
+                    logoURL: isDevnetUsdc ? usdcLogoURL : (jup?.logoURL ?? bal?.logoUri.flatMap { URL(string: $0) }),
+                    ataAddress: account.pubkey
+                ))
             }
         }
 
@@ -348,6 +389,7 @@ struct SendSheet: View {
             // Submit — returns immediately on broadcast, not on confirmation
             let signature = try await SolanaRPC.sendTransaction(signedTxBase64, network: network)
             await MainActor.run { txSignature = signature }
+            Task { await HexonAPI.recordBroadcast(requestId: UUID().uuidString, signature: signature) }
 
             // Wait for on-chain confirmation before refreshing balance
             await SolanaRPC.confirmTransaction(signature, network: network)

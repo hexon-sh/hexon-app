@@ -1,14 +1,18 @@
 import Foundation
 
-let heliusApiKey  = "57682451-258e-45ae-84e4-e666ce11256a"
-let solMint       = "So11111111111111111111111111111111111111112"
-let nativeSolMint = "So11111111111111111111111111111111111111111"
-let solLogoURL    = URL(string: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png")!
+let heliusApiKey     = "57682451-258e-45ae-84e4-e666ce11256a"
+let solMint          = "So11111111111111111111111111111111111111112"
+let nativeSolMint    = "So11111111111111111111111111111111111111111"
+let mainnetUsdcMint  = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+let devnetUsdcMint   = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+let solLogoURL       = URL(string: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png")!
+let usdcLogoURL      = URL(string: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png")!
 
 // Solana program IDs
-let systemProgramId   = "11111111111111111111111111111111"
-let tokenProgramId    = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-let assocTokenProgId  = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1brs"
+let systemProgramId      = "11111111111111111111111111111111"
+let tokenProgramId       = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+let assocTokenProgId     = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1brs"
+let computeBudgetProgId  = "ComputeBudget111111111111111111111111111111"
 
 func isSolMint(_ mint: String) -> Bool {
     mint == solMint || mint == nativeSolMint

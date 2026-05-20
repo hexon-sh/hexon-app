@@ -12,7 +12,7 @@ enum TxError: LocalizedError {
         switch self {
         case .invalidAddress(let a): return "Invalid address: \(a)"
         case .missingSourceATA:      return "You don't have a token account for this token"
-        case .missingDestATA:        return "Recipient has no token account for this token"
+        case .missingDestATA:        return "The recipient doesn't have a wallet set up for this token yet. They need to receive or create a token account first."
         case .signingFailed:         return "Transaction signing failed"
         }
     }
@@ -47,11 +47,26 @@ private func pubkey(_ address: String) throws -> [UInt8] {
     return bytes
 }
 
-// MARK: - Little-endian u64
+// MARK: - Little-endian helpers
 
 private func u64LE(_ value: UInt64) -> [UInt8] {
     withUnsafeBytes(of: value.littleEndian, Array.init)
 }
+
+private func u32LE(_ value: UInt32) -> [UInt8] {
+    withUnsafeBytes(of: value.littleEndian, Array.init)
+}
+
+// MARK: - Compute Budget instructions
+// Included in every transaction for reliable mainnet inclusion.
+
+private let computeUnitLimit: UInt32 = 200_000
+private let computeUnitPrice: UInt64 = 5_000  // microLamports per CU
+
+// SetComputeUnitLimit (discriminator 2)
+private func setComputeUnitLimitData() -> [UInt8] { [2] + u32LE(computeUnitLimit) }
+// SetComputeUnitPrice (discriminator 3)
+private func setComputeUnitPriceData() -> [UInt8] { [3] + u64LE(computeUnitPrice) }
 
 // MARK: - MessageV0 builder
 
@@ -122,20 +137,30 @@ func buildSOLTransfer(
     let sender    = try pubkey(senderAddress)
     let recipient = try pubkey(recipientAddress)
     let sysProg   = try pubkey(systemProgramId)
+    let cbProg    = try pubkey(computeBudgetProgId)
 
-    // Account order: sender(signer,writable), recipient(writable), SystemProgram(readonly)
-    let keys = [sender, recipient, sysProg]
-    // SystemProgram transfer discriminator = 2, then u64 lamports
-    let data: [UInt8] = [2, 0, 0, 0] + u64LE(lamports)
-    let ix = CompiledInstruction(programIndex: 2, accountIndices: [0, 1], data: data)
+    // Account order:
+    //   0: sender        — signer, writable (fee payer)
+    //   1: recipient     — writable unsigned
+    //   2: SystemProgram — readonly unsigned
+    //   3: ComputeBudget — readonly unsigned
+    let keys = [sender, recipient, sysProg, cbProg]
+
+    let ixLimit   = CompiledInstruction(programIndex: 3, accountIndices: [], data: setComputeUnitLimitData())
+    let ixPrice   = CompiledInstruction(programIndex: 3, accountIndices: [], data: setComputeUnitPriceData())
+    let ixTransfer = CompiledInstruction(
+        programIndex: 2,
+        accountIndices: [0, 1],
+        data: [2, 0, 0, 0] + u64LE(lamports)   // SystemProgram::Transfer discriminator
+    )
 
     let message = buildMessageV0(
         feePayer: sender,
         accountKeys: keys,
         numSigners: 1,
         numReadonlySigned: 0,
-        numReadonlyUnsigned: 1,
-        instructions: [ix],
+        numReadonlyUnsigned: 2,   // SystemProgram + ComputeBudget
+        instructions: [ixLimit, ixPrice, ixTransfer],
         recentBlockhash: blockhashBytes
     )
     let txBytes = assembleTransaction(message: message)
@@ -162,20 +187,31 @@ func buildSPLTransfer(
     let srcATA  = try pubkey(sourceATA)
     let dstATA  = try pubkey(destinationATA)
     let tokProg = try pubkey(tokenProgramId)
+    let cbProg  = try pubkey(computeBudgetProgId)
 
-    // Account order: src_ata(writable), dst_ata(writable), owner(signer), TokenProgram(readonly)
-    let keys = [srcATA, dstATA, sender, tokProg]
-    // SPL Token Transfer discriminator = 3, then u64 amount
-    let data: [UInt8] = [3] + u64LE(amount)
-    let ix = CompiledInstruction(programIndex: 3, accountIndices: [0, 1, 2], data: data)
+    // Account order — sender MUST be first (index 0) as the sole signer / fee payer:
+    //   0: sender        — signer, writable (authority + fee payer)
+    //   1: srcATA        — writable unsigned
+    //   2: dstATA        — writable unsigned
+    //   3: TokenProgram  — readonly unsigned
+    //   4: ComputeBudget — readonly unsigned
+    let keys = [sender, srcATA, dstATA, tokProg, cbProg]
+
+    let ixLimit    = CompiledInstruction(programIndex: 4, accountIndices: [], data: setComputeUnitLimitData())
+    let ixPrice    = CompiledInstruction(programIndex: 4, accountIndices: [], data: setComputeUnitPriceData())
+    let ixTransfer = CompiledInstruction(
+        programIndex: 3,
+        accountIndices: [1, 2, 0],              // srcATA, dstATA, authority(sender)
+        data: [3] + u64LE(amount)               // SPL Token::Transfer discriminator
+    )
 
     let message = buildMessageV0(
         feePayer: sender,
         accountKeys: keys,
         numSigners: 1,
         numReadonlySigned: 0,
-        numReadonlyUnsigned: 1,
-        instructions: [ix],
+        numReadonlyUnsigned: 2,   // TokenProgram + ComputeBudget
+        instructions: [ixLimit, ixPrice, ixTransfer],
         recentBlockhash: blockhashBytes
     )
     let txBytes = assembleTransaction(message: message)

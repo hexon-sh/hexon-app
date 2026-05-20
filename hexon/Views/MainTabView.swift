@@ -30,6 +30,7 @@ struct MainTabView: View {
                 isLoading: isLoadingWallet || isLoadingData,
                 isDevnet: selectedNetwork.isDevnet,
                 network: selectedNetwork,
+                addressBook: addressBook,
                 onRefresh: { await fetchData() }
             )
             .tabItem { Label("Home", systemImage: selectedTab == 0 ? "house.fill" : "house") }
@@ -44,9 +45,13 @@ struct MainTabView: View {
                 .tabItem { Label("History", systemImage: selectedTab == 1 ? "clock.fill" : "clock") }
                 .tag(1)
 
-            SettingsView(addressBook: addressBook)
-                .tabItem { Label("Settings", systemImage: selectedTab == 2 ? "gearshape.fill" : "gearshape") }
+            PrivateWalletView(walletAddress: walletAddress, network: selectedNetwork, addressBook: addressBook)
+                .tabItem { Label("Private", systemImage: selectedTab == 2 ? "lock.shield.fill" : "lock.shield") }
                 .tag(2)
+
+            SettingsView(addressBook: addressBook)
+                .tabItem { Label("Settings", systemImage: selectedTab == 3 ? "gearshape.fill" : "gearshape") }
+                .tag(3)
         }
         .tint(Color(UIColor.label))
         .task { await loadWalletThenData() }
@@ -72,6 +77,7 @@ struct MainTabView: View {
             }
             if let addr = walletAddress {
                 UserDefaults.standard.set(addr, forKey: "hexon_wallet_address")
+                Task { await HexonAPI.syncSession(walletAddress: addr) }
             }
         } catch {}
         isLoadingWallet = false
@@ -92,11 +98,13 @@ struct MainTabView: View {
         jupiterTokens = [:]
 
         if network.isDevnet {
-            let lamports = (try? await SolanaRPC.getBalance(address: address, network: network)) ?? 0
+            async let lamportsFetch = SolanaRPC.getBalance(address: address, network: network)
+            async let tokenAccountsFetch = SolanaRPC.getTokenAccounts(owner: address, network: network)
+            let (lamports, tokenAccounts) = ((try? await lamportsFetch) ?? 0, (try? await tokenAccountsFetch) ?? [])
             guard fetchGeneration == gen else { return }
             let solBalance = Double(lamports) / 1_000_000_000.0
-            walletBalances = WalletBalances(
-                balances: [TokenBalance(
+            var balances: [TokenBalance] = [
+                TokenBalance(
                     mint: solMint,
                     symbol: "SOL",
                     name: "Solana",
@@ -105,9 +113,21 @@ struct MainTabView: View {
                     pricePerToken: nil,
                     usdValue: nil,
                     logoUri: nil
-                )],
-                totalUsdValue: nil
-            )
+                )
+            ]
+            if let usdcAccount = tokenAccounts.first(where: { $0.mint == network.usdcMint }) {
+                balances.append(TokenBalance(
+                    mint: network.usdcMint,
+                    symbol: "USDC",
+                    name: "USD Coin",
+                    balance: usdcAccount.uiAmount,
+                    decimals: usdcAccount.decimals,
+                    pricePerToken: nil,
+                    usdValue: nil,
+                    logoUri: usdcLogoURL.absoluteString
+                ))
+            }
+            walletBalances = WalletBalances(balances: balances, totalUsdValue: nil)
         } else {
             async let balances = HeliusAPI.getBalances(address: address, network: network)
             async let history  = HeliusAPI.getHistory(address: address, network: network)
@@ -137,16 +157,18 @@ struct HomeTab: View {
     let isLoading: Bool
     let isDevnet: Bool
     let network: SolanaNetwork
+    let addressBook: AddressBook
     let onRefresh: () async -> Void
 
     @State private var showQR = false
     @State private var showSend = false
+    @State private var showSwap = false
     @State private var showScanner = false
     @State private var scannedAddress = ""
 
     private var allTokens: [TokenBalance] {
         let balances = walletBalances?.balances ?? []
-        return isDevnet ? balances.filter { isSolMint($0.mint) } : balances
+        return isDevnet ? balances.filter { isSolMint($0.mint) || $0.mint == network.usdcMint } : balances
     }
 
     var body: some View {
@@ -192,10 +214,18 @@ struct HomeTab: View {
                     walletBalances: walletBalances,
                     jupiterTokens: jupiterTokens,
                     network: network,
+                    addressBook: addressBook,
                     prefillAddress: scannedAddress,
                     onSendSuccess: { await onRefresh() }
                 )
                 .onDisappear { scannedAddress = "" }
+            }
+            .navigationDestination(isPresented: $showSwap) {
+                SwapSheet(
+                    walletAddress: walletAddress ?? "",
+                    network: network,
+                    onSuccess: { await onRefresh() }
+                )
             }
         }
     }
@@ -241,21 +271,33 @@ struct HomeTab: View {
     // MARK: Send / Receive
 
     private var actionButtons: some View {
-        HStack(spacing: 14) {
-            Button { showSend = true } label: {
-                Label("Send", systemImage: "arrow.up")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-            }
-            .glassEffect(in: .rect(cornerRadius: 14))
+        VStack(spacing: 10) {
+            HStack(spacing: 14) {
+                Button { showSend = true } label: {
+                    Label("Send", systemImage: "arrow.up")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .glassEffect(in: .rect(cornerRadius: 14))
 
-            Button { showQR = true } label: {
-                Label("Receive", systemImage: "arrow.down")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                Button { showQR = true } label: {
+                    Label("Receive", systemImage: "arrow.down")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .glassEffect(in: .rect(cornerRadius: 14))
+                .disabled(walletAddress == nil)
             }
-            .glassEffect(in: .rect(cornerRadius: 14))
-            .disabled(walletAddress == nil)
+
+            if !isDevnet {
+                Button { showSwap = true } label: {
+                    Label("Swap", systemImage: "arrow.2.squarepath")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .glassEffect(in: .rect(cornerRadius: 14))
+                .disabled(walletAddress == nil)
+            }
         }
     }
 
@@ -269,7 +311,7 @@ struct HomeTab: View {
 
             VStack(spacing: 0) {
                 ForEach(allTokens) { token in
-                    TokenRow(token: token, jupiterToken: jupiterTokens[token.mint], isDevnet: isDevnet)
+                    TokenRow(token: token, jupiterToken: jupiterTokens[token.mint], isDevnet: isDevnet, devnetUsdcMint: isDevnet ? network.usdcMint : nil)
                     if token.id != allTokens.last?.id {
                         Divider()
                     }

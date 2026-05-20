@@ -14,7 +14,9 @@ struct TxRow: View {
 
     private func logoURL(for change: TxBalanceChange) -> URL? {
         if change.isSol { return solLogoURL }
-        return jupToken(for: change)?.logoURL ?? token(for: change)?.logoUri.flatMap { URL(string: $0) }
+        let tok = token(for: change)
+        if tok?.symbol?.uppercased() == "SOL" { return solLogoURL }
+        return jupToken(for: change)?.logoURL ?? tok?.logoUri.flatMap { URL(string: $0) }
     }
 
     var body: some View {
@@ -39,7 +41,7 @@ struct TxRow: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 if let change = primaryChange {
-                    let symbol = token(for: change)?.symbol ?? change.tokenLabel
+                    let symbol = change.isSol ? "SOL" : (token(for: change)?.symbol ?? change.tokenLabel)
                     Text(String(format: "%+.4f %@", change.humanAmount, symbol))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(hasError ? .red : (isIncoming ? .green : .red))

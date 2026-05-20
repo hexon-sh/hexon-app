@@ -4,15 +4,18 @@ struct TokenRow: View {
     let token: TokenBalance
     let jupiterToken: JupiterToken?
     var isDevnet: Bool = false
+    var devnetUsdcMint: String? = nil
 
     private var logoURL: URL? {
         if isSolMint(token.mint) { return solLogoURL }
+        if let devnetMint = devnetUsdcMint, token.mint == devnetMint { return usdcLogoURL }
+        if isDevnet { return nil }
         return jupiterToken?.logoURL ?? token.logoUri.flatMap { URL(string: $0) }
     }
 
     var body: some View {
         HStack(spacing: 12) {
-            CachedAsyncImage(url: isDevnet && !isSolMint(token.mint) ? nil : logoURL)
+            CachedAsyncImage(url: logoURL)
                 .frame(width: 36, height: 36)
                 .clipShape(Circle())
 

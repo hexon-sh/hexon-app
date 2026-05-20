@@ -5,6 +5,7 @@ struct TxDetailSheet: View {
     let tokenLookup: [String: TokenBalance]
     let jupiterTokens: [String: JupiterToken]
     @State private var urlCopied = false
+    @State private var sigCopied = false
     @AppStorage("selectedExplorer") private var selectedExplorerRaw = SolanaExplorer.solanaExplorer.rawValue
 
     private var explorerURL: URL {
@@ -83,6 +84,26 @@ struct TxDetailSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    Button {
+                        UIPasteboard.general.string = tx.signature
+                        sigCopied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            sigCopied = false
+                        }
+                    } label: {
+                        HStack {
+                            Label(sigCopied ? "Copied!" : "Copy Signature",
+                                  systemImage: sigCopied ? "checkmark" : "doc.on.doc")
+                                .font(.headline)
+                                .foregroundStyle(sigCopied ? .green : Color(UIColor.label))
+                            Spacer()
+                        }
+                        .padding(16)
+                    }
+                    .glassEffect(in: .rect(cornerRadius: 14))
+                    .animation(.easeInOut, value: sigCopied)
 
                     Button {
                         UIPasteboard.general.string = explorerURL.absoluteString

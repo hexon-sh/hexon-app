@@ -7,6 +7,8 @@ enum SolanaNetwork: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var isDevnet: Bool { self == .devnet }
 
+    var usdcMint: String { isDevnet ? devnetUsdcMint : mainnetUsdcMint }
+
     var restBase: String {
         switch self {
         case .mainnet: return "https://api.helius.xyz/v1/wallet"

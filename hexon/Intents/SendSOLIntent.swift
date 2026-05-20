@@ -21,7 +21,10 @@ struct ContactEntity: AppEntity {
 
 struct ContactQuery: EntityQuery {
     func entities(for identifiers: [UUID]) async throws -> [ContactEntity] {
-        loadContacts().filter { identifiers.contains($0.id) }
+        // Load directly from UserDefaults — no network, always fast.
+        // Must return every requested identifier or Siri marks the selection as failed.
+        let all = loadContacts()
+        return identifiers.compactMap { id in all.first { $0.id == id } }
     }
 
     func suggestedEntities() async throws -> [ContactEntity] {
@@ -48,13 +51,13 @@ struct SendSOLIntent: AppIntent {
     static var openAppWhenRun = false
 
     // Parameters are declared in prompt order: 1 → token, 2 → recipient, 3 → amount
-    @Parameter(title: "Token", description: "Token to send")
+    @Parameter(title: "Token", description: "Token to send", requestValueDialog: IntentDialog("Which token do you want to send?"))
     var token: WalletTokenEntity
 
-    @Parameter(title: "To", description: "Saved contact to send to")
+    @Parameter(title: "To", description: "Saved contact to send to", requestValueDialog: IntentDialog("Send to which contact?"))
     var recipient: ContactEntity
 
-    @Parameter(title: "Amount", description: "Amount to send", controlStyle: .field)
+    @Parameter(title: "Amount", description: "Amount to send", controlStyle: .field, requestValueDialog: IntentDialog("How much?"))
     var amount: Double
 
     static var parameterSummary: some ParameterSummary {
